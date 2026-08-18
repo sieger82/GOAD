@@ -1,0 +1,125 @@
+Vagrant.configure("2") do |config|
+
+# Uncomment this depending on the provider you want to use
+ENV['VAGRANT_DEFAULT_PROVIDER'] = 'hyperv'
+ENV['VAGRANT_LOG'] = 'debug'
+
+{{lab}}
+
+{{extensions}}
+
+{% if use_provisioning_vm %}
+boxes.append(
+    { :name => "PROVISIONING",
+      :ip => "{{ip_range}}.3",
+      :box => "boxen/ubuntu-22.04",
+      :os => "linux",
+      :cpus => 2,
+      :mem => 2000,
+      :forwarded_port => [ {:guest => 22, :host => 2210, :id => "ssh"} ]
+    }
+)
+{% endif %}
+
+  # Create the hyperv network switch
+  config.trigger.before :up do |trigger|
+    trigger.info = "Checking if internal network switch exists..."
+    trigger.run = { inline: "powershell.exe -ExecutionPolicy Bypass -File ../../../vagrant/hyperv_create_switch.ps1 {{ip_range}}" }
+  end
+  config.trigger.after :destroy do |dtrigger|
+    dtrigger.info = "Removing internal network switch..."
+    dtrigger.run = { inline: "powershell.exe -ExecutionPolicy Bypass -File ../../../vagrant/hyperv_remove_switch.ps1 {{ip_range}}" }
+  end
+
+  config.vm.boot_timeout = 600
+  config.vm.graceful_halt_timeout = 600
+  config.winrm.retry_limit = 30
+  config.winrm.retry_delay = 10
+  config.winrm.ssl_peer_verification = false
+
+  boxes.each do |box|
+    config.vm.define box[:name] do |target|
+      # BOX
+      target.vm.provider "hyperv" do |v|
+        v.vmname = box[:name]
+        v.memory = box[:mem]
+        v.cpus = box[:cpus]
+      end
+      target.vm.box_download_insecure = box[:box]
+      target.vm.box = box[:box]
+      if box.has_key?(:box_version)
+        target.vm.box_version = box[:box_version]
+      end
+
+      # issues/49
+      target.vm.synced_folder '.', '/vagrant', disabled: true
+
+      #connect to the default switch
+      target.vm.network "public_network", bridge: "Default Switch"
+
+      target.trigger.before :"VagrantPlugins::HyperV::Action::StartInstance", type: :action do |boxtrigger|
+        boxtrigger.info = "VM created, adding 2nd network interface to #{box[:name]}"
+        boxtrigger.run = { inline: "powershell.exe -ExecutionPolicy Bypass -File ../../../vagrant/hyperv_add_network_adapter.ps1 #{box[:name]} GOAD_INTERNAL_{{ip_range}}" }
+      end
+
+      # OS specific
+      if box[:os] == "windows"
+        target.vm.guest = :windows
+        target.vm.communicator = "winrm"
+        target.vm.provision "shell", path: "../../../vagrant/Install-WMF3Hotfix.ps1", privileged: false
+        target.vm.provision "shell", path: "../../../vagrant/ConfigureRemotingForAnsible.ps1", privileged: false
+        target.vm.provision "shell", path: "../../../vagrant/hyperv_fix_ip.ps1", privileged: false, args: box[:ip], powershell_args: "-ExecutionPolicy Bypass"
+        if box[:name].include?("-DC0")
+          # disable windows updates early to prevent timeouts later
+          target.vm.provision "shell", path: "../../../ansible/roles/settings/no_updates/files/noupdate.ps1", privileged: false, powershell_args: "-ExecutionPolicy Bypass"
+        end
+        if box[:name].include?("-SRV0")
+          # start windows updates scan
+          target.vm.provision "shell", privileged: false, inline: <<-SHELL
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+            Install-Module -Name PSWindowsUpdate -Force
+            $TaskName = "PSWindowsUpdate"
+            Invoke-WUJob -ComputerName "localhost" -TaskName $TaskName -Script {
+              Import-Module PSWindowsUpdate
+              Get-WindowsUpdate -MicrosoftUpdate -Install -AcceptAll -RecurseCycle 5 -IgnoreReboot -ErrorAction SilentlyContinue
+            } -RunNow -Confirm:$false -Verbose
+            Write-Host "Waiting for Windows Updates to complete..."
+            do {
+              $Task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+              $StateString = [string]$Task.State
+              if (-not $Task) {
+                  Write-Host "Could not query task status. Please wait..." -ForegroundColor Yellow
+                  Start-Sleep -Seconds 30
+                  continue 
+              }
+              if ($StateString -like "*Running*") {
+                  Write-Host "Still running Windows Updates... (Status: $StateString)"
+                  Start-Sleep -Seconds 30
+              }
+            } while ($StateString -like "*Running*" -or -not $Task)
+
+            #while ((Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue).State -match "Running|Queued") {
+            #    Start-Sleep -Seconds 30
+            #    Write-Host "Still running Windows Updates..."
+            #}
+            Write-Host "Windows Updates completed!"
+          SHELL
+        end
+      else
+        target.vm.communicator = "ssh"
+        target.vm.provision "shell", path: "../../../vagrant/hyperv_fix_linux_ip.sh", privileged: true, args: box[:ip] 
+      end
+
+      #TODO
+      if box.has_key?(:forwarded_port)
+        # forwarded port explicit
+        box[:forwarded_port] do |forwarded_port|
+          target.vm.network :forwarded_port, guest: forwarded_port[:guest], host: forwarded_port[:host], host_ip: "127.0.0.1", id: forwarded_port[:id]
+        end
+      end
+
+    end
+  end
+end
