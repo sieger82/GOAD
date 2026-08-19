@@ -2,6 +2,7 @@ Vagrant.configure("2") do |config|
 
 # Uncomment this depending on the provider you want to use
 ENV['VAGRANT_DEFAULT_PROVIDER'] = 'hyperv'
+ENV['VAGRANT_LOG'] = 'debug'
 
 {{lab}}
 
@@ -25,8 +26,10 @@ boxes.append(
     trigger.info = "Checking if internal network switch exists..."
     trigger.run = { inline: "powershell.exe -ExecutionPolicy Bypass -File ../../../vagrant/hyperv_create_switch.ps1 {{ip_range}}" }
   end
-
-  
+  config.trigger.after :destroy do |dtrigger|
+    dtrigger.info = "Removing internal network switch..."
+    dtrigger.run = { inline: "powershell.exe -ExecutionPolicy Bypass -File ../../../vagrant/hyperv_remove_switch.ps1 {{ip_range}}" }
+  end
 
   config.vm.boot_timeout = 600
   config.vm.graceful_halt_timeout = 600
@@ -72,18 +75,22 @@ boxes.append(
         end
         if box[:name].include?("-SRV0")
           # start windows updates scan
-          #target.vm.provision "shell", inline: 'Start-Process usoclient -ArgumentList "startscan"', privileged: false
           target.vm.provision "shell", privileged: false, inline: <<-SHELL
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
             Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
             Install-Module -Name PSWindowsUpdate -Force
-            #Enable-WURemoting -Confirm:$false
-            #Get-WindowsUpdate -MicrosoftUpdate -Install -AcceptAll
-            Invoke-WUJob -ComputerName "localhost" -Script {
+            $TaskName = "PSWindowsUpdate"
+            Invoke-WUJob -ComputerName "localhost" -TaskName $TaskName -Script {
               Import-Module PSWindowsUpdate
-              Get-WindowsUpdate -MicrosoftUpdate -Install -AcceptAll
+              Get-WindowsUpdate -MicrosoftUpdate -Install -AcceptAll -RecurseCycle 5 -IgnoreReboot -ErrorAction SilentlyContinue
             } -RunNow -Confirm:$false -Verbose
+            Write-Host "Waiting for Windows Updates to complete..."
+            while ((Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue).State -eq "Running") {
+                Start-Sleep -Seconds 30
+                Write-Host "Still running Windows Updates..."
+            }
+            Write-Host "Windows Updates completed!"
           SHELL
         end
       else
