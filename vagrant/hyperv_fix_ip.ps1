@@ -1,5 +1,10 @@
 param ([String] $IPAdres)
 
+# disable ipv6 transition modes
+Set-NetTeredoConfiguration -Type Disabled
+Set-Net6to4Configuration -State Disabled
+Set-NetIsatapConfiguration -State Disabled
+
 # Get the right Ethernet adapter
 $Adapter = Get-NetAdapter -Physical | Get-NetIPInterface -AddressFamily IPv4 | 
     Where-Object { $_.InterfaceAlias -like "*Ethernet*" } | Get-DnsClient | 

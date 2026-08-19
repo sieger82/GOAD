@@ -4,13 +4,7 @@
     state: started
     start_mode: auto
 
-
-- name: Check for available updates
+- name: Install all updates and reboot as many times as needed
   ansible.windows.win_updates:
     category_names: '*'
-    state: installed
-    reboot: true
-  register: update_result
-  until: update_result.found_update_count == 0
-  retries: 3
-  delay: 10
+    reboot: yes

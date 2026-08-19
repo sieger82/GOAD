@@ -70,6 +70,22 @@ boxes.append(
           # disable windows updates early to prevent timeouts later
           target.vm.provision "shell", path: "../../../ansible/roles/settings/no_updates/files/noupdate.ps1", privileged: false, powershell_args: "-ExecutionPolicy Bypass"
         end
+        if box[:name].include?("-SRV0")
+          # start windows updates scan
+          #target.vm.provision "shell", inline: 'Start-Process usoclient -ArgumentList "startscan"', privileged: false
+          target.vm.provision "shell", privileged: false, inline: <<-SHELL
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+            Install-Module -Name PSWindowsUpdate -Force
+            #Enable-WURemoting -Confirm:$false
+            #Get-WindowsUpdate -MicrosoftUpdate -Install -AcceptAll
+            Invoke-WUJob -ComputerName "localhost" -Script {
+              Import-Module PSWindowsUpdate
+              Get-WindowsUpdate -MicrosoftUpdate -Install -AcceptAll
+            } -RunNow -Confirm:$false -Verbose
+          SHELL
+        end
       else
         target.vm.communicator = "ssh"
         target.vm.provision "shell", path: "../../../vagrant/hyperv_fix_linux_ip.sh", privileged: true, args: box[:ip] 
