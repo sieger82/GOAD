@@ -86,10 +86,24 @@ boxes.append(
               Get-WindowsUpdate -MicrosoftUpdate -Install -AcceptAll -RecurseCycle 5 -IgnoreReboot -ErrorAction SilentlyContinue
             } -RunNow -Confirm:$false -Verbose
             Write-Host "Waiting for Windows Updates to complete..."
-            while ((Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue).State -eq "Running") {
-                Start-Sleep -Seconds 30
-                Write-Host "Still running Windows Updates..."
-            }
+            do {
+              $Task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+              $StateString = [string]$Task.State
+              if (-not $Task) {
+                  Write-Host "Could not query task status. Please wait..." -ForegroundColor Yellow
+                  Start-Sleep -Seconds 30
+                  continue 
+              }
+              if ($StateString -like "*Running*") {
+                  Write-Host "Still running Windows Updates... (Status: $StateString)"
+                  Start-Sleep -Seconds 30
+              }
+            } while ($StateString -like "*Running*" -or -not $Task)
+
+            #while ((Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue).State -match "Running|Queued") {
+            #    Start-Sleep -Seconds 30
+            #    Write-Host "Still running Windows Updates..."
+            #}
             Write-Host "Windows Updates completed!"
           SHELL
         end
