@@ -9,4 +9,5 @@ if ($null -eq $adapter) {
     Add-VMNetworkAdapter -VMName $box_name -Name "GOAD_INTERNAL" -SwitchName $name_private_vswitch
 } else {
     Write-Host "[!] Netwerkadapter GOAD_INTERNAL already exists on VM '$box_name'." -ForegroundColor Cyan
+    Connect-VMNetworkAdapter -VMName $box_name -Name "GOAD_INTERNAL" -SwitchName $name_private_vswitch
 }
