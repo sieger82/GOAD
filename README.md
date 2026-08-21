@@ -1,3 +1,46 @@
+## Hyper-V Fork
+This fork of the official GOAD repository is tweaked to work with Hyper-V. Tested on Windows 11 Pro.
+
+### Steps to install
+Install Hyper-V
+
+```
+Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
+```
+
+Install Vagrant.
+After Vagrant is installed: install the following plugins:
+
+```
+vagrant.exe plugin install vagrant-reload winrm winrm-fs winrm-elevated
+```
+
+Install python (tested with 3.13) and git
+
+Clone GOAD repo (with these updates)
+```
+git clone https://github.com/sieger82/GOAD.git
+cd GOAD/
+```
+
+Open a cmd.exe with Administrator privileges
+
+Create and activate python virtual env and install requirements (noansible version)
+```
+python -m venv .env
+.env\Scripts\activate.bat
+pip install -r noansible_requirements.yml
+```
+
+Launch GOAD:
+```
+python goad.py -m vm -p hyperv
+```
+
+Select your lab and other settings and install.
+
+-------------------------------------------
+
 <div align="center">
   <h1><img alt="GOAD (Game Of Active Directory)" src="./docs/mkdocs/docs/img/logo_GOAD3.png"></h1>
   <br>
