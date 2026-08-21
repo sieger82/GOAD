@@ -1,4 +1,7 @@
-param ([String] $IPAdres)
+param (
+    [String] $IPAdres,
+    [String] $ip_range
+)
 
 # disable ipv6 transition modes
 Set-NetTeredoConfiguration -Type Disabled
@@ -14,5 +17,7 @@ $Adapter = Get-NetAdapter -Physical | Get-NetIPInterface -AddressFamily IPv4 |
 # Set the IP
 if ($Adapter) {
     Remove-NetIPAddress -InterfaceAlias $Adapter.InterfaceAlias -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
-    New-NetIPAddress -InterfaceAlias $Adapter.InterfaceAlias -IPAddress $IPAdres -PrefixLength 24 
+    Remove-NetRoute -InterfaceAlias $Adapter.InterfaceAlias -Confirm:$false -ErrorAction SilentlyContinue
+    New-NetIPAddress -InterfaceAlias $Adapter.InterfaceAlias -IPAddress $IPAdres -PrefixLength 24 -DefaultGateway "$($ip_range).1"
+    Set-DnsClientServerAddress -InterfaceAlias $Adapter.InterfaceAlias -ServerAddresses ("1.1.1.1")
 }

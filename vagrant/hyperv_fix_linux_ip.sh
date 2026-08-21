@@ -9,10 +9,14 @@ network:
   renderer: networkd
   ethernets:
     eth0:
-      dhcp4: true
-    eth1:
       dhcp4: false
       addresses:
         - $1/24
+      routes:
+        - to: default
+          via: $2.1
+      nameservers:
+        addresses:
+          - 1.1.1.1
 EOF
 nohup bash -c "sleep 2 && netplan apply" > /dev/null 2>&1 &
