@@ -51,4 +51,4 @@ class WindowsCommand(Command):
         return False
 
     def check_hyperv(self):
-        return self.file_exist("C:\\WINDOWS\\System32\\mmc.exe")
+        return self.file_exist("C:\\WINDOWS\\System32\\virtmgmt.msc")
